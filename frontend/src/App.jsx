@@ -1,35 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./App.css";
 
-const initialTickets = [
-  {
-    id: 1001,
-    title: "Unable to log in",
-    requester: "Aarav Sharma",
-    priority: "High",
-    status: "Open",
-    category: "Technical Support",
-  },
-  {
-    id: 1002,
-    title: "Request for software access",
-    requester: "Priya Kumar",
-    priority: "Medium",
-    status: "In Progress",
-    category: "Access Request",
-  },
-  {
-    id: 1003,
-    title: "Laptop performance issue",
-    requester: "Rahul Verma",
-    priority: "Low",
-    status: "Resolved",
-    category: "Hardware",
-  },
-];
+const API_URL = "http://localhost:5000/api/tickets";
 
 function App() {
-  const [tickets, setTickets] = useState(initialTickets);
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
@@ -42,6 +20,31 @@ function App() {
   const [activePage, setActivePage] = useState("Dashboard");
   const [currentUser, setCurrentUser] = useState("");
 
+  // Fetch tickets from backend
+  useEffect(() => {
+    async function fetchTickets() {
+      try {
+        const response = await fetch(API_URL);
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch tickets");
+        }
+
+        const data = await response.json();
+        setTickets(data);
+        setError("");
+      } catch (error) {
+        console.error("Error fetching tickets:", error);
+        setError("Unable to load tickets. Please check your backend.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchTickets();
+  }, []);
+
+  // Filter tickets
   const filteredTickets = tickets.filter((ticket) => {
     const matchesSearch =
       `${ticket.title} ${ticket.requester} ${ticket.id}`
@@ -60,42 +63,64 @@ function App() {
     return matchesSearch && matchesStatus && matchesPage;
   });
 
-  function createTicket(event) {
+  // Create ticket and save it in backend
+  async function createTicket(event) {
     event.preventDefault();
 
     if (!title.trim() || !requester.trim()) return;
 
     const newTicket = {
-      id:
-        Math.max(1000, ...tickets.map((ticket) => ticket.id)) + 1,
       title: title.trim(),
       requester: requester.trim(),
       priority,
       category,
-      status: "Open",
     };
 
-    setTickets((current) => [newTicket, ...current]);
-    setCurrentUser(requester.trim());
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(newTicket),
+      });
 
-    setTitle("");
-    setRequester("");
-    setPriority("Medium");
-    setCategory("Technical Support");
-    setShowForm(false);
-    setActivePage("All Tickets");
-    setSearch("");
-    setFilter("All");
+      if (!response.ok) {
+        throw new Error("Failed to create ticket");
+      }
+
+      const savedTicket = await response.json();
+
+      setTickets((current) => [savedTicket, ...current]);
+      setCurrentUser(requester.trim());
+
+      setTitle("");
+      setRequester("");
+      setPriority("Medium");
+      setCategory("Technical Support");
+      setShowForm(false);
+      setActivePage("All Tickets");
+      setSearch("");
+      setFilter("All");
+
+    } catch (error) {
+      console.error("Error creating ticket:", error);
+      alert("Unable to create ticket. Please try again.");
+    }
   }
 
+  // Update ticket status (frontend only for now)
   function updateStatus(id, status) {
     setTickets((current) =>
       current.map((ticket) =>
-        ticket.id === id ? { ...ticket, status } : ticket
+        ticket.id === id
+          ? { ...ticket, status }
+          : ticket
       )
     );
   }
 
+  // Navigation
   function navigateTo(page) {
     setActivePage(page);
     setSearch("");
@@ -103,6 +128,7 @@ function App() {
     setShowForm(false);
   }
 
+  // Dashboard statistics
   const openCount = tickets.filter(
     (ticket) => ticket.status === "Open"
   ).length;
@@ -117,7 +143,10 @@ function App() {
 
   return (
     <main className="app">
+
+      {/* Sidebar */}
       <aside className="sidebar">
+
         <div className="brand">
           <span>NS</span> NeoStark
         </div>
@@ -195,9 +224,13 @@ function App() {
             <small>Administrator</small>
           </div>
         </div>
+
       </aside>
 
+      {/* Main Content */}
       <section className="content">
+
+        {/* Header */}
         <header className="topbar">
           <div>
             <span className="eyebrow">SUPPORT CENTER</span>
@@ -214,6 +247,7 @@ function App() {
           )}
         </header>
 
+        {/* Dashboard */}
         {activePage === "Dashboard" && (
           <>
             <section className="welcome">
@@ -229,6 +263,7 @@ function App() {
             </section>
 
             <section className="stats">
+
               <article className="stat-card">
                 <span>Total Tickets</span>
                 <strong>{tickets.length}</strong>
@@ -252,19 +287,35 @@ function App() {
                 <strong>{resolvedCount}</strong>
                 <small>Successfully completed</small>
               </article>
+
             </section>
           </>
         )}
 
+        {/* Loading and Error Messages */}
+        {loading && (
+          <p>Loading tickets...</p>
+        )}
+
+        {error && (
+          <p className="empty">{error}</p>
+        )}
+
+        {/* Create Ticket Form */}
         {showForm && activePage !== "Settings" && (
-          <form className="ticket-form" onSubmit={createTicket}>
+          <form
+            className="ticket-form"
+            onSubmit={createTicket}
+          >
             <h2>Create a support ticket</h2>
 
             <label>
               Issue title
               <input
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) =>
+                  setTitle(event.target.value)
+                }
                 placeholder="Describe your issue"
                 required
               />
@@ -274,7 +325,9 @@ function App() {
               Requester name
               <input
                 value={requester}
-                onChange={(event) => setRequester(event.target.value)}
+                onChange={(event) =>
+                  setRequester(event.target.value)
+                }
                 placeholder="Your name"
                 required
               />
@@ -284,7 +337,9 @@ function App() {
               Category
               <select
                 value={category}
-                onChange={(event) => setCategory(event.target.value)}
+                onChange={(event) =>
+                  setCategory(event.target.value)
+                }
               >
                 <option>Technical Support</option>
                 <option>Access Request</option>
@@ -297,7 +352,9 @@ function App() {
               Priority
               <select
                 value={priority}
-                onChange={(event) => setPriority(event.target.value)}
+                onChange={(event) =>
+                  setPriority(event.target.value)
+                }
               >
                 <option>Low</option>
                 <option>Medium</option>
@@ -307,6 +364,7 @@ function App() {
             </label>
 
             <div className="form-actions">
+
               <button
                 type="button"
                 className="secondary"
@@ -315,15 +373,22 @@ function App() {
                 Cancel
               </button>
 
-              <button className="primary" type="submit">
+              <button
+                className="primary"
+                type="submit"
+              >
                 Submit Ticket
               </button>
+
             </div>
           </form>
         )}
 
+        {/* Settings Page */}
         {activePage === "Settings" ? (
+
           <section className="ticket-section">
+
             <div className="section-heading">
               <div>
                 <h2>Settings</h2>
@@ -345,14 +410,20 @@ function App() {
               </label>
 
               <p>
-                This is a frontend prototype. Profile editing and
-                saving settings are not connected yet.
+                This is a frontend prototype. Profile editing
+                and saving settings are not connected yet.
               </p>
             </div>
+
           </section>
+
         ) : (
+
+          /* All Tickets and My Requests */
           activePage !== "Dashboard" && (
+
             <section className="ticket-section">
+
               <div className="section-heading">
                 <div>
                   <h2>
@@ -371,26 +442,36 @@ function App() {
                 </div>
               </div>
 
+              {/* Search and Filter */}
               <div className="toolbar">
+
                 <input
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) =>
+                    setSearch(event.target.value)
+                  }
                   placeholder="Search tickets, requesters, or ID..."
                 />
 
                 <select
                   value={filter}
-                  onChange={(event) => setFilter(event.target.value)}
+                  onChange={(event) =>
+                    setFilter(event.target.value)
+                  }
                 >
                   <option>All</option>
                   <option>Open</option>
                   <option>In Progress</option>
                   <option>Resolved</option>
                 </select>
+
               </div>
 
+              {/* Ticket Table */}
               <div className="table-wrap">
+
                 <table>
+
                   <thead>
                     <tr>
                       <th>Ticket</th>
@@ -402,13 +483,18 @@ function App() {
                   </thead>
 
                   <tbody>
+
                     {filteredTickets.map((ticket) => (
+
                       <tr key={ticket.id}>
+
                         <td>
                           <strong>#{ticket.id}</strong>
+
                           <div className="ticket-title">
                             {ticket.title}
                           </div>
+
                           <small>{ticket.category}</small>
                         </td>
 
@@ -437,7 +523,10 @@ function App() {
                             aria-label={`Update ticket ${ticket.id}`}
                             value={ticket.status}
                             onChange={(event) =>
-                              updateStatus(ticket.id, event.target.value)
+                              updateStatus(
+                                ticket.id,
+                                event.target.value
+                              )
                             }
                           >
                             <option>Open</option>
@@ -445,29 +534,43 @@ function App() {
                             <option>Resolved</option>
                           </select>
                         </td>
+
                       </tr>
+
                     ))}
 
-                    {filteredTickets.length === 0 && (
+                    {filteredTickets.length === 0 &&
+                      !loading && (
+
                       <tr>
                         <td colSpan="5" className="empty">
-                          {activePage === "My Requests" && !currentUser
+                          {activePage === "My Requests" &&
+                          !currentUser
                             ? "Create a ticket to see your requests here."
                             : "No tickets match your search or filter."}
                         </td>
                       </tr>
+
                     )}
+
                   </tbody>
+
                 </table>
+
               </div>
+
             </section>
+
           )
+
         )}
 
         <footer>
           NeoStark Support Ticketing Tool · Frontend prototype
         </footer>
+
       </section>
+
     </main>
   );
 }
