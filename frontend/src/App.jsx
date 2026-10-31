@@ -14,8 +14,9 @@ function App() {
 
   const [title, setTitle] = useState("");
   const [requester, setRequester] = useState("");
-  const [priority, setPriority] = useState("Medium");
-  const [category, setCategory] = useState("Technical Support");
+  const [priority, setPriority] = useState("MEDIUM");
+  const [category, setCategory] = useState("TECHNICAL");
+  const [description, setDescription] = useState("");
 
   const [activePage, setActivePage] = useState("Dashboard");
   const [currentUser, setCurrentUser] = useState("");
@@ -47,17 +48,23 @@ function App() {
   // Filter tickets
   const filteredTickets = tickets.filter((ticket) => {
     const matchesSearch =
-      `${ticket.title} ${ticket.requester} ${ticket.id}`
+      `${ticket.title} ${ticket.requester || ""} ${ticket.id}`
         .toLowerCase()
         .includes(search.toLowerCase());
 
-    const matchesStatus =
-      filter === "All" || ticket.status === filter;
+    const reverseStatusMap = {
+      "OPEN": "Open",
+      "IN_PROGRESS": "In Progress",
+      "CLOSED": "Resolved"
+    };
+
+    const displayStatus = reverseStatusMap[ticket.status] || ticket.status;
+    const matchesStatus = filter === "All" || displayStatus === filter;
 
     const matchesPage =
       activePage !== "My Requests" ||
       (currentUser.trim() !== "" &&
-        ticket.requester.toLowerCase() ===
+        (ticket.requester || "").toLowerCase() ===
           currentUser.trim().toLowerCase());
 
     return matchesSearch && matchesStatus && matchesPage;
@@ -71,9 +78,11 @@ function App() {
 
     const newTicket = {
       title: title.trim(),
+      description: description.trim() || "Support request submitted via portal",
+      priority: priority.toUpperCase(),
+      status: "OPEN",
+      category: category.toUpperCase(),
       requester: requester.trim(),
-      priority,
-      category,
     };
 
     try {
@@ -89,15 +98,17 @@ function App() {
         throw new Error("Failed to create ticket");
       }
 
-      const savedTicket = await response.json();
+      const data = await response.json();
+      const savedTicket = data.ticket || data;
 
       setTickets((current) => [savedTicket, ...current]);
       setCurrentUser(requester.trim());
 
       setTitle("");
+      setDescription("");
       setRequester("");
-      setPriority("Medium");
-      setCategory("Technical Support");
+      setPriority("MEDIUM");
+      setCategory("TECHNICAL");
       setShowForm(false);
       setActivePage("All Tickets");
       setSearch("");
@@ -109,15 +120,83 @@ function App() {
     }
   }
 
-  // Update ticket status (frontend only for now)
-  function updateStatus(id, status) {
-    setTickets((current) =>
-      current.map((ticket) =>
-        ticket.id === id
-          ? { ...ticket, status }
-          : ticket
-      )
-    );
+  // Update ticket status in backend
+  async function updateStatus(id, newStatus) {
+    const statusMap = {
+      "Open": "OPEN",
+      "In Progress": "IN_PROGRESS",
+      "Resolved": "CLOSED"
+    };
+
+    const backendStatus = statusMap[newStatus] || "OPEN";
+    const currentTicket = tickets.find((t) => t.id === id);
+
+    if (!currentTicket) return;
+
+    const updatedData = {
+      title: currentTicket.title,
+      description: currentTicket.description || "Updated ticket description",
+      priority: currentTicket.priority,
+      status: backendStatus,
+      category: currentTicket.category
+    };
+
+    try {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedData),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update status");
+      }
+
+      const data = await response.json();
+      const updatedTicket = data.ticket || data;
+
+      const reverseStatusMap = {
+        "OPEN": "Open",
+        "IN_PROGRESS": "In Progress",
+        "CLOSED": "Resolved"
+      };
+
+      const normalizedTicket = {
+        ...updatedTicket,
+        status: reverseStatusMap[updatedTicket.status] || updatedTicket.status
+      };
+
+      setTickets((current) =>
+        current.map((ticket) =>
+          ticket.id === id ? normalizedTicket : ticket
+        )
+      );
+    } catch (error) {
+      console.error("Error updating ticket status:", error);
+      alert("Unable to update ticket status. Please try again.");
+    }
+  }
+
+  // Delete ticket from backend
+  async function deleteTicket(id) {
+    if (!window.confirm("Are you sure you want to delete this ticket?")) return;
+
+    try {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete ticket");
+      }
+
+      setTickets((current) => current.filter((ticket) => ticket.id !== id));
+    } catch (error) {
+      console.error("Error deleting ticket:", error);
+      alert("Unable to delete ticket. Please try again.");
+    }
   }
 
   // Navigation
@@ -128,17 +207,17 @@ function App() {
     setShowForm(false);
   }
 
-  // Dashboard statistics
+  // Dashboard statistics helper
   const openCount = tickets.filter(
-    (ticket) => ticket.status === "Open"
+    (ticket) => ticket.status === "OPEN" || ticket.status === "Open"
   ).length;
 
   const progressCount = tickets.filter(
-    (ticket) => ticket.status === "In Progress"
+    (ticket) => ticket.status === "IN_PROGRESS" || ticket.status === "In Progress"
   ).length;
 
   const resolvedCount = tickets.filter(
-    (ticket) => ticket.status === "Resolved"
+    (ticket) => ticket.status === "CLOSED" || ticket.status === "Resolved"
   ).length;
 
   return (
@@ -160,11 +239,6 @@ function App() {
           onClick={() => navigateTo("Dashboard")}
           role="button"
           tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              navigateTo("Dashboard");
-            }
-          }}
         >
           ▦ &nbsp; Dashboard
         </div>
@@ -176,11 +250,6 @@ function App() {
           onClick={() => navigateTo("All Tickets")}
           role="button"
           tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              navigateTo("All Tickets");
-            }
-          }}
         >
           ▤ &nbsp; All Tickets
         </div>
@@ -192,11 +261,6 @@ function App() {
           onClick={() => navigateTo("My Requests")}
           role="button"
           tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              navigateTo("My Requests");
-            }
-          }}
         >
           ◷ &nbsp; My Requests
         </div>
@@ -208,11 +272,6 @@ function App() {
           onClick={() => navigateTo("Settings")}
           role="button"
           tabIndex={0}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              navigateTo("Settings");
-            }
-          }}
         >
           ⚙ &nbsp; Settings
         </div>
@@ -322,6 +381,17 @@ function App() {
             </label>
 
             <label>
+              Description
+              <input
+                value={description}
+                onChange={(event) =>
+                  setDescription(event.target.value)
+                }
+                placeholder="Detailed description"
+              />
+            </label>
+
+            <label>
               Requester name
               <input
                 value={requester}
@@ -341,10 +411,10 @@ function App() {
                   setCategory(event.target.value)
                 }
               >
-                <option>Technical Support</option>
-                <option>Access Request</option>
-                <option>Hardware</option>
-                <option>Other</option>
+                <option value="TECHNICAL">Technical Support</option>
+                <option value="ACCESS">Access Request</option>
+                <option value="HARDWARE">Hardware</option>
+                <option value="OTHER">Other</option>
               </select>
             </label>
 
@@ -356,10 +426,9 @@ function App() {
                   setPriority(event.target.value)
                 }
               >
-                <option>Low</option>
-                <option>Medium</option>
-                <option>High</option>
-                <option>Urgent</option>
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH">High</option>
               </select>
             </label>
 
@@ -478,66 +547,83 @@ function App() {
                       <th>Requester</th>
                       <th>Priority</th>
                       <th>Status</th>
-                      <th>Update status</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
 
                   <tbody>
 
-                    {filteredTickets.map((ticket) => (
+                    {filteredTickets.map((ticket) => {
+                      const reverseStatusMap = {
+                        "OPEN": "Open",
+                        "IN_PROGRESS": "In Progress",
+                        "CLOSED": "Resolved"
+                      };
+                      const displayStatus = reverseStatusMap[ticket.status] || ticket.status;
 
-                      <tr key={ticket.id}>
+                      return (
+                        <tr key={ticket.id}>
 
-                        <td>
-                          <strong>#{ticket.id}</strong>
+                          <td>
+                            <strong>#{ticket.id}</strong>
 
-                          <div className="ticket-title">
-                            {ticket.title}
-                          </div>
+                            <div className="ticket-title">
+                              {ticket.title}
+                            </div>
 
-                          <small>{ticket.category}</small>
-                        </td>
+                            <small>{ticket.category}</small>
+                          </td>
 
-                        <td>{ticket.requester}</td>
+                          <td>{ticket.requester || "N/A"}</td>
 
-                        <td>
-                          <span
-                            className={`priority ${ticket.priority.toLowerCase()}`}
-                          >
-                            {ticket.priority}
-                          </span>
-                        </td>
+                          <td>
+                            <span
+                              className={`priority ${(ticket.priority || "").toLowerCase()}`}
+                            >
+                              {ticket.priority}
+                            </span>
+                          </td>
 
-                        <td>
-                          <span
-                            className={`status ${ticket.status
-                              .toLowerCase()
-                              .replace(" ", "-")}`}
-                          >
-                            {ticket.status}
-                          </span>
-                        </td>
+                          <td>
+                            <span
+                              className={`status ${displayStatus
+                                .toLowerCase()
+                                .replace(" ", "-")}`}
+                            >
+                              {displayStatus}
+                            </span>
+                          </td>
 
-                        <td>
-                          <select
-                            aria-label={`Update ticket ${ticket.id}`}
-                            value={ticket.status}
-                            onChange={(event) =>
-                              updateStatus(
-                                ticket.id,
-                                event.target.value
-                              )
-                            }
-                          >
-                            <option>Open</option>
-                            <option>In Progress</option>
-                            <option>Resolved</option>
-                          </select>
-                        </td>
+                          <td>
+                            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                              <select
+                                aria-label={`Update ticket ${ticket.id}`}
+                                value={displayStatus}
+                                onChange={(event) =>
+                                  updateStatus(
+                                    ticket.id,
+                                    event.target.value
+                                  )
+                                }
+                              >
+                                <option>Open</option>
+                                <option>In Progress</option>
+                                <option>Resolved</option>
+                              </select>
 
-                      </tr>
+                              <button
+                                className="secondary"
+                                style={{ padding: "4px 8px", cursor: "pointer", color: "#e74c3c", borderColor: "#e74c3c" }}
+                                onClick={() => deleteTicket(ticket.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
 
-                    ))}
+                        </tr>
+                      );
+                    })}
 
                     {filteredTickets.length === 0 &&
                       !loading && (
